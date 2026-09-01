@@ -1,0 +1,10 @@
+project_id = "ripple"
+
+[functions.api]
+verify_jwt = false
+
+[functions.research-daily]
+verify_jwt = false
+
+[functions.publish-daily]
+verify_jwt = false

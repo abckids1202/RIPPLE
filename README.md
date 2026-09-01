@@ -1,36 +1,52 @@
 # RIPPLE
 
-RIPPLE is a mobile-first browser game about reconstructing strange but real chains of cause and effect.
+RIPPLE is a daily learning game about reconstructing strange but real chains of cause and effect.
 
 > Two events. One hidden chain. Discover how the world connects.
 
-## MVP included
-
-- Daily Ripple #143: Mount Tambora → the Year Without a Summer → the bicycle
-- Four additional archive cases across science, medicine, music, and internet culture
-- Three plausible choices at every step
-- Wrong branches that explain why the connection does not hold
-- Local resume state, completion history, hints, scoring, and spoiler-free share text
-- Animated chain reveal with relationship labels and source links
-- Responsive mobile/desktop layouts, keyboard-friendly controls, and reduced-motion support
+The current build is an editorial evidence atlas: each case combines a source-first puzzle, archival/public-domain media, annotated image pins, causal labels, rejection copy for decoys, and a short learning takeaway.
 
 ## Run locally
 
-```bash
+From PowerShell:
+
+```powershell
+cd C:\Users\charl\OneDrive\Desktop\RIPPLE
 npm install
 npm run dev
 ```
 
-To create a production build:
+Open the URL printed by Vite, usually `http://localhost:5173`.
 
-```bash
-npm run build
+The app works without environment variables by using the five seed puzzles and browser-local attempts/history. To enable the Supabase API, copy `.env.example` to `.env.local`, add the public Vite values, and restart Vite:
+
+```powershell
+Copy-Item .env.example .env.local
+npm run dev
 ```
 
-## Content model
+Only `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` belong in `.env.local`. Search and cron secrets must stay in Supabase Edge Function secrets.
 
-Puzzle content lives in [`src/data/puzzles.ts`](./src/data/puzzles.ts). Each step includes a relationship label, bridge explanation, hint, plausible decoys, rejection copy, and a source link so the content can later move into an editorial backend without changing the game UI.
+## Build and preview
 
-## Next product step
+```powershell
+npm run build
+npm run preview
+```
 
-The current build is the local vertical slice described in the product plan. The natural next phase is a Supabase-backed public daily endpoint and a protected editor workflow for expanding the reviewed puzzle library to 30 cases.
+## What is included
+
+- Daily, archive, gameplay, result-map, and method screens
+- Evidence-board gameplay with media annotations, source ribbons, timeline markers, hints, lives, resume state, and reduced-motion support
+- Public-domain/licensed media metadata with source URL, license, credit, alt text, focal point, and annotation coordinates
+- Local editor desk preview with candidate inbox, evidence trail, media queue, review checklist, and approval gate
+- Supabase schema and Row Level Security policies for content, research candidates, reviews, publication slots, attempts, and revisions
+- Supabase Edge Functions for spoiler-safe public API routes, reviewed research ingestion, and idempotent UTC publication/fallback selection
+
+## Content
+
+Seed puzzle content lives in [`src/data/puzzles.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/puzzles.ts). Evidence media and annotations live in [`src/data/atlas.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/atlas.ts). The editor preview data is in [`src/data/editor.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/editor.ts).
+
+## Supabase
+
+See [`supabase/README.md`](C:/Users/charl/OneDrive/Desktop/RIPPLE/supabase/README.md) for migration, function deployment, secrets, and scheduler setup. Research jobs only create candidates; a human must review and approve a chain before the publication job can use it.
