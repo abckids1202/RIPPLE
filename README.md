@@ -18,7 +18,7 @@ npm run dev
 
 Open the URL printed by Vite, usually `http://localhost:5173`.
 
-The app works without environment variables by using the five seed puzzles and browser-local attempts/history. To enable the Supabase API, copy `.env.example` to `.env.local`, add the public Vite values, and restart Vite:
+The app works without environment variables by using the five original seed puzzles plus the 119-case curated expansion pack (124 playable cases total) and browser-local attempts/history. To enable the Supabase API, copy `.env.example` to `.env.local`, add the public Vite values, and restart Vite:
 
 ```powershell
 Copy-Item .env.example .env.local
@@ -45,7 +45,7 @@ npm run preview
 
 ## Content
 
-Seed puzzle content lives in [`src/data/puzzles.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/puzzles.ts). Evidence media and annotations live in [`src/data/atlas.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/atlas.ts). The editor preview data is in [`src/data/editor.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/editor.ts).
+The five original cases live in [`src/data/puzzles.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/puzzles.ts). The expanded 119-case catalog and its playable-chain generator live in [`src/data/expandedPuzzles.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/expandedPuzzles.ts). Evidence media and annotations live in [`src/data/atlas.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/atlas.ts). The editor preview data is in [`src/data/editor.ts`](C:/Users/charl/OneDrive/Desktop/RIPPLE/src/data/editor.ts).
 
 ## Supabase
 

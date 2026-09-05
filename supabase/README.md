@@ -1,6 +1,6 @@
 # RIPPLE Supabase setup
 
-The Supabase layer is optional for local development. Without Vite Supabase variables, RIPPLE falls back to the five local JSON/TypeScript seed puzzles.
+The Supabase layer is optional for local development. Without Vite Supabase variables, RIPPLE falls back to the local TypeScript catalog: five original cases plus the 119-case expansion pack.
 
 ## Database
 

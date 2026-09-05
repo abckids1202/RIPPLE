@@ -1,3 +1,5 @@
+import { expandedPuzzles } from './expandedPuzzles'
+
 export type Relationship =
   | 'Caused'
   | 'Enabled'
@@ -102,7 +104,7 @@ const draisMachine: Event = {
   tone: 'mint',
 }
 
-export const puzzles: Puzzle[] = [
+const seedPuzzles: Puzzle[] = [
   {
     id: 'tambora-to-bicycle',
     number: 143,
@@ -320,6 +322,8 @@ export const puzzles: Puzzle[] = [
     ],
   },
 ]
+
+export const puzzles: Puzzle[] = [...seedPuzzles, ...expandedPuzzles]
 
 export const dailyPuzzle = puzzles[0]
 
