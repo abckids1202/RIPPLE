@@ -21,6 +21,7 @@ export type Event = {
 export type Choice = Event & {
   correct: boolean
   whyWrong?: string
+  answerId?: string
 }
 
 export type Step = {
@@ -55,6 +56,7 @@ export type Puzzle = {
   takeaway: string
   sources: Source[]
   accent: string
+  automated?: boolean
 }
 
 const asCorrect = (event: Event): Choice => ({ ...event, correct: true })

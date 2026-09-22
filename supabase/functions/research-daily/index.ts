@@ -32,8 +32,15 @@ Deno.serve(async (request) => {
   const preflight = options(request)
   if (preflight) return preflight
   if (!hasCronSecret(request)) return error('Cron authentication required', 401)
+  let runId: string | null = null
   try {
     const client = serviceClient()
+    const now = new Date()
+    const bucket = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), Math.floor(now.getUTCMinutes() / 15) * 15)).toISOString()
+    const run = await client.from('research_job_runs').insert({ idempotency_key: 'discovery:' + bucket, stage: 'discovery', status: 'running', prompt_version: 'brave-leads-v1' }).select('id').single()
+    if (run.error?.code === '23505') return json({ ok: true, idempotent: true, published: 0 })
+    if (run.error) throw run.error
+    runId = run.data.id
     const { data: topics, error: topicError } = await client.from('research_topics').select('*').eq('active', true)
     if (topicError) throw topicError
     let candidatesCreated = 0
@@ -68,9 +75,11 @@ Deno.serve(async (request) => {
         failures.push(`${topic.name}: ${caught instanceof Error ? caught.message : 'topic failed'}`)
       }
     }
-    return json({ ok: failures.length === 0, topicsProcessed, candidatesCreated, failures, published: 0, note: 'Research only creates candidates; editorial approval is required before publication.' })
+    await client.from('research_job_runs').update({ status: failures.length ? 'failed' : 'succeeded', source_count: candidatesCreated, details: { topicsProcessed, failures }, finished_at: new Date().toISOString() }).eq('id', runId)
+    return json({ ok: failures.length === 0, topicsProcessed, candidatesCreated, failures, published: 0, note: 'Discovery creates leads only; research-worker must fetch and verify evidence before publication.' })
   } catch (caught) {
     console.error(caught)
+    if (runId) await serviceClient().from('research_job_runs').update({ status: 'failed', error_message: caught instanceof Error ? caught.message : 'Research job failed', finished_at: new Date().toISOString() }).eq('id', runId)
     return error(caught instanceof Error ? caught.message : 'Research job failed', 500)
   }
 })

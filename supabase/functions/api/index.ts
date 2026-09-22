@@ -45,6 +45,7 @@ async function loadPuzzle(client: any, puzzle: DbRow, includeAnswers = false) {
     const source = sourceById.get(sourceId) ?? sources?.[0]
     const stepChoices = choices.filter((choice: DbRow) => choice.edge_id === edge.id).map((choice: DbRow) => ({
       id: choice.event_id ? (eventById.get(choice.event_id)?.node_key ?? choice.event_id) : choice.id,
+      answerId: choice.id,
       title: choice.title,
       detail: choice.detail,
       year: choice.year_label,
@@ -79,6 +80,7 @@ async function loadPuzzle(client: any, puzzle: DbRow, includeAnswers = false) {
     takeaway: puzzle.takeaway,
     sources: frontendSources,
     accent: puzzle.accent,
+    automated: Boolean(puzzle.automated),
   }
 }
 
@@ -116,6 +118,20 @@ async function editorOnly(request: Request) {
 async function handleEditor(request: Request, segments: string[]) {
   const editor = await editorOnly(request)
   const client = serviceClient()
+  if (request.method === 'POST' && segments[1] === 'puzzles' && segments[3] === 'unpublish') {
+    const puzzleId = segments[2]
+    const body = await request.json()
+    const note = typeof body.note === 'string' ? body.note.trim() : ''
+    if (!note) return error('A correction or withdrawal note is required', 422)
+    const { data: puzzle } = await client.from('puzzles').select('*').eq('id', puzzleId).maybeSingle()
+    if (!puzzle) return error('Puzzle not found', 404)
+    const { data: updated, error: updateError } = await client.from('puzzles').update({ status: 'archived' }).eq('id', puzzleId).select().single()
+    if (updateError) throw updateError
+    await client.from('publication_slots').update({ status: 'cancelled', fallback_reason: note }).eq('puzzle_id', puzzleId).in('status', ['scheduled', 'published', 'fallback'])
+    await client.from('automated_verifications').update({ status: 'withdrawn', withdrawn_at: new Date().toISOString() }).eq('puzzle_id', puzzleId)
+    await client.from('revisions').insert({ entity_type: 'puzzle', entity_id: puzzleId, editor_id: editor.user.id, action: 'unpublished_or_corrected', snapshot: updated, correction_note: note })
+    return json({ ok: true, puzzle: updated })
+  }
   if (request.method === 'GET' && segments[1] === 'candidates') {
     const { data, error: queryError } = await client.from('research_candidates').select('*, editorial_reviews(*)').order('created_at', { ascending: false })
     if (queryError) throw queryError
@@ -207,8 +223,9 @@ async function handlePublic(request: Request, segments: string[]) {
     const { data: attempt } = await client.from('attempts').select('*').eq('id', attemptId).maybeSingle()
     if (!attempt || attempt.status !== 'active') return error('Attempt is unavailable', 404)
     const { data: edge } = await client.from('causal_edges').select('*').eq('id', body.stepId).eq('puzzle_id', attempt.puzzle_id).maybeSingle()
+    if (!edge || edge.step_index !== attempt.current_step) return error('Answer does not match the current step', 409)
     const { data: choice } = await client.from('choice_options').select('is_correct, rejection_copy').eq('id', body.choiceId).eq('edge_id', body.stepId).maybeSingle()
-    if (!edge || !choice) return error('Answer is not valid for this step', 422)
+    if (!choice) return error('Answer is not valid for this step', 422)
     const correct = Boolean(choice.is_correct)
     await client.from('attempt_answers').insert({ attempt_id: attemptId, edge_id: edge.id, choice_id: body.choiceId, is_correct: correct })
     const nextStep = correct ? attempt.current_step + 1 : attempt.current_step

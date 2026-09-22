@@ -6,5 +6,8 @@ verify_jwt = false
 [functions.research-daily]
 verify_jwt = false
 
+[functions.research-worker]
+verify_jwt = false
+
 [functions.publish-daily]
 verify_jwt = false

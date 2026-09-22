@@ -1,50 +1,51 @@
-# RIPPLE Supabase setup
+# RIPPLE Supabase and always-on research setup
 
-The Supabase layer is optional for local development. Without Vite Supabase variables, RIPPLE falls back to the local TypeScript catalog: five original cases plus the 119-case expansion pack.
+The browser keeps its bundled 124-case catalog as an offline fallback. Research runs on Supabase infrastructure, so your PC can be off. NLP drafts and cross-checks candidate cases; it does not train a new model. Automated approval is recorded separately and is never represented as human editorial review.
 
-## Database
+## Database and Edge Functions
 
-Install the Supabase CLI, link the project, then apply the schema:
+Install the Supabase CLI, link your hosted project, and apply both migrations:
 
-```powershell
+~~~powershell
 supabase login
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
-```
+~~~
 
-The migration creates the content model, research/editor tables, attempts, publication slots, revision history, and RLS policies. Public roles can read published content only. Choice rows remain private so `is_correct` cannot leak through the data API; the Edge Function strips answer keys from public payloads.
+Deploy the functions:
 
-Create an editor by inserting the authenticated user id into `editor_profiles` (as an admin/service-role operation):
-
-```sql
-insert into public.editor_profiles (user_id, display_name, role)
-values ('AUTH_USER_UUID', 'Evidence editor', 'editor');
-```
-
-## Edge Functions and secrets
-
-```powershell
-supabase secrets set BRAVE_SEARCH_API_KEY=YOUR_BRAVE_KEY RIPPLE_CRON_SECRET=LONG_RANDOM_SECRET
+~~~powershell
 supabase functions deploy api
 supabase functions deploy research-daily
+supabase functions deploy research-worker
 supabase functions deploy publish-daily
-```
+~~~
 
-The `api` function exposes the public and editor routes described in the product plan. `research-daily` calls Brave when configured and otherwise uses curated topic seed URLs. It is idempotent on canonical source URL and never publishes a candidate. `publish-daily` validates sources, causal labels, confidence, explanations, rejection copy, reviewer approval, and media provenance before publishing; it selects a reviewed fallback when the scheduled puzzle is unavailable.
+Set server-only credentials and spending controls. Leave the AI budget at zero or omit it to pause NLP work safely. Set the per-token rates to the selected model's current API pricing:
 
-## Scheduling
+~~~powershell
+supabase secrets set BRAVE_SEARCH_API_KEY=YOUR_BRAVE_KEY RIPPLE_CRON_SECRET=LONG_RANDOM_SECRET OPENAI_API_KEY=YOUR_OPENAI_KEY RIPPLE_RESEARCH_MODEL=gpt-5-mini RIPPLE_AI_MONTHLY_BUDGET_USD=YOUR_MONTHLY_LIMIT RIPPLE_AI_MAX_CASE_RESERVATION_USD=YOUR_PER_CASE_LIMIT RIPPLE_AI_INPUT_USD_PER_MILLION=YOUR_MODEL_INPUT_RATE RIPPLE_AI_OUTPUT_USD_PER_MILLION=YOUR_MODEL_OUTPUT_RATE
+~~~
 
-Schedule `research-daily` once per day before editorial review and `publish-daily` at `00:00 UTC`. Supabase Cron, GitHub Actions, or another scheduler can call the functions with the secret header:
+Missing/zero budget, rates, reservation, or AI key means no NLP work. Provider keys and the cron secret are never Vite variables.
 
-```text
-x-ripple-cron: LONG_RANDOM_SECRET
-```
+## Scheduled operation
 
-Example request URLs:
+Create the Vault values shown at the top of supabase/schedule.sql, then run that SQL in the hosted Supabase SQL editor. It schedules discovery and one research-worker invocation every 15 minutes, plus publication at 00:05 UTC. The hosted scheduler invokes the Edge Functions; your computer does not need to stay online.
 
-```text
-https://YOUR_PROJECT_REF.supabase.co/functions/v1/research-daily
-https://YOUR_PROJECT_REF.supabase.co/functions/v1/publish-daily
-```
+Discovery stores search leads only. The worker fetches pages only from each topic's curated HTTPS domain allowlist; Wikipedia and unlisted sites cannot count as publication evidence. It requires two different allowlisted domains for each edge, creates a structured case, and asks a second model pass to reject unsupported or disputed links. Failures stay private and are written to job/candidate records. Publishing selects one daily case and up to four archive additions (five maximum), with the existing fallback used when no case passes.
 
-Keep `BRAVE_SEARCH_API_KEY`, `RIPPLE_CRON_SECRET`, and the Supabase service role key out of the browser bundle and out of git.
+Automated checks do not guarantee truth; models can miss errors. Cases are marked AI-drafted/auto-checked. Authenticated editors can withdraw a case through POST /editor/puzzles/:id/unpublish with a required correction note; this archives the puzzle, cancels its slots, withdraws its verification, and writes a revision. The current browser editor remains a local/mock workspace; this protected API route is ready for a real editor control. Review automated cases before broad launch.
+
+## Security and operations
+
+- Public reads are limited by RLS to published puzzle content; drafts, evidence, verification reports, and correct-choice rows remain private.
+- Scheduler requests use the x-ripple-cron header. Keep it and all service-role/provider keys server-side.
+- The worker handles one candidate per invocation and bounds fetch size/time, HTTPS, allowlisted hosts, and redirects.
+- Inspect research_job_runs, research_candidates.pipeline_error, and Supabase Cron run history to diagnose failures.
+- The software budget is only a guardrail. Configure a provider-side hard spending limit too.
+- Repository changes do not deploy or activate the hosted scheduler; project setup and credentials are still required.
+
+## Local app
+
+Run npm install and npm run dev. Without VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, the local catalog remains available without cloud credentials.

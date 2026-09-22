@@ -5,6 +5,7 @@ import { atlasForPuzzle, mediaForEvent, type Annotation, type EditorialReview, t
 import { defaultEditorialReview, editorCandidates } from './data/editor'
 import { dailyPuzzle, getEventById, getPuzzleById, puzzles, type Choice, type Event, type Puzzle, type Step } from './data/puzzles'
 import { isSupabaseConfigured } from './lib/supabase'
+import { rippleApi, type SafePuzzlePayload } from './lib/ripple-api'
 import type { Attempt } from './types'
 import './styles.css'
 
@@ -23,14 +24,18 @@ const readJson = <T,>(key: string, fallback: T): T => {
 }
 
 const makeAttempt = (puzzle: Puzzle): Attempt => ({ puzzleId: puzzle.id, chain: [puzzle.start.id], stepIndex: 0, mistakes: 0, hints: 0, firstTry: 0, wrongChoices: [], hintSteps: [], startedAt: Date.now() })
+
+function fromCloud(payload: SafePuzzlePayload, fallbackNumber: number): Puzzle {
+  return { ...payload, number: payload.number ?? fallbackNumber, automated: payload.automated, steps: payload.steps.map((step) => ({ ...step, choices: step.choices.map((choice) => ({ ...choice, correct: false })) as Choice[] })) }
+}
 const numberLabel = (number: number) => `#${String(number).padStart(3, '0')}`
 
 function Brand({ onClick }: { onClick: () => void }) {
   return <button className="brand" onClick={onClick} aria-label="RIPPLE home"><span className="brand-symbol" aria-hidden="true"><i /><i /><i /></span><span>RIPPLE</span></button>
 }
 
-function Header({ screen, onNavigate }: { screen: Screen; onNavigate: (screen: Screen) => void }) {
-  return <header className="topbar"><Brand onClick={() => onNavigate('home')} /><nav className="main-nav" aria-label="Main navigation"><button className={screen === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => onNavigate('home')}>Daily</button><button className={screen === 'archive' ? 'nav-item active' : 'nav-item'} onClick={() => onNavigate('archive')}>Archive <span>{String(puzzles.length).padStart(2, '0')}</span></button><button className={screen === 'how' ? 'nav-item active' : 'nav-item'} onClick={() => onNavigate('how')}>Method</button></nav><div className="topbar-actions"><button className={screen === 'editor' ? 'desk-link active' : 'desk-link'} onClick={() => onNavigate('editor')}><span>⌘</span> Editor desk</button><span className="streak"><b>✦</b> 4 day streak</span><button className="profile-dot" aria-label="Your profile">LM</button></div></header>
+function Header({ screen, onNavigate, caseCount }: { screen: Screen; onNavigate: (screen: Screen) => void; caseCount: number }) {
+  return <header className="topbar"><Brand onClick={() => onNavigate('home')} /><nav className="main-nav" aria-label="Main navigation"><button className={screen === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => onNavigate('home')}>Daily</button><button className={screen === 'archive' ? 'nav-item active' : 'nav-item'} onClick={() => onNavigate('archive')}>Archive <span>{String(caseCount).padStart(2, '0')}</span></button><button className={screen === 'how' ? 'nav-item active' : 'nav-item'} onClick={() => onNavigate('how')}>Method</button></nav><div className="topbar-actions"><button className={screen === 'editor' ? 'desk-link active' : 'desk-link'} onClick={() => onNavigate('editor')}><span>⌘</span> Editor desk</button><span className="streak"><b>✦</b> 4 day streak</span><button className="profile-dot" aria-label="Your profile">LM</button></div></header>
 }
 
 function MediaFrame({ asset, className = '', label, activeAnnotation, onAnnotationClick, showCredit = true }: { asset: MediaAsset; className?: string; label?: string; activeAnnotation?: string; onAnnotationClick?: (annotation: Annotation) => void; showCredit?: boolean }) {
@@ -61,14 +66,14 @@ function HomeScreen({ puzzle, dailyDone, activeAttempt, onPlay, onResume, onNavi
 
 function CaseCard({ puzzle, onPlay, completed = false }: { puzzle: Puzzle; onPlay: (puzzle: Puzzle) => void; completed?: boolean }) {
   const media = atlasForPuzzle(puzzle).featured
-  return <article className="case-card" role="button" tabIndex={0} onClick={() => onPlay(puzzle)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPlay(puzzle) } }} style={{ '--case-accent': puzzle.accent } as CSSProperties} aria-label={`Open case ${numberLabel(puzzle.number)}: ${puzzle.question}`}><div className="case-card-image"><MediaFrame asset={media} showCredit={false} /><span className="case-card-number">{numberLabel(puzzle.number)}</span><span className="case-card-open">OPEN ↗</span></div><div className="case-card-copy"><span className="micro-label">{puzzle.category} / {puzzle.difficulty}</span><h3>{puzzle.question}</h3><div><span>{puzzle.duration}</span>{completed ? <b className="done-label">✓ Completed</b> : <b>Follow the thread →</b>}</div></div></article>
+  return <article className="case-card" role="button" tabIndex={0} onClick={() => onPlay(puzzle)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPlay(puzzle) } }} style={{ '--case-accent': puzzle.accent } as CSSProperties} aria-label={`Open case ${numberLabel(puzzle.number)}: ${puzzle.question}`}><div className="case-card-image"><MediaFrame asset={media} showCredit={false} /><span className="case-card-number">{numberLabel(puzzle.number)}</span><span className="case-card-open">OPEN ↗</span></div><div className="case-card-copy"><span className="micro-label">{puzzle.category} / {puzzle.difficulty}</span>{puzzle.automated && <span className="micro-label">AI-DRAFTED / AUTO-CHECKED</span>}<h3>{puzzle.question}</h3><div><span>{puzzle.duration}</span>{completed ? <b className="done-label">✓ Completed</b> : <b>Follow the thread →</b>}</div></div></article>
 }
 
-function ArchiveScreen({ history, onPlay }: { history: Record<string, Attempt>; onPlay: (puzzle: Puzzle) => void }) {
+function ArchiveScreen({ history, onPlay, catalog }: { history: Record<string, Attempt>; onPlay: (puzzle: Puzzle) => void; catalog: Puzzle[] }) {
   const [filter, setFilter] = useState('All cases')
-  const categories = ['All cases', ...Array.from(new Set(puzzles.map((puzzle) => puzzle.category)))]
-  const visible = filter === 'All cases' ? puzzles : puzzles.filter((puzzle) => puzzle.category === filter)
-  return <main className="page shell-width page-spacer"><div className="archive-intro"><div><span className="micro-label">THE CASE ARCHIVE</span><h1>Find the next<br /><em>hidden link.</em></h1><p>Real events, carefully connected. Search by subject, then let the evidence change your mind.</p></div><div className="archive-count"><strong>{String(puzzles.length).padStart(2, '0')}</strong><span>reviewed<br />case files</span></div></div><div className="filter-tabs" aria-label="Filter archive">{categories.map((category) => <button key={category} className={filter === category ? 'selected' : ''} onClick={() => setFilter(category)}>{category}</button>)}</div><div className="archive-case-grid">{visible.map((puzzle) => <CaseCard key={puzzle.id} puzzle={puzzle} onPlay={onPlay} completed={Boolean(history[puzzle.id]?.completed)} />)}</div><div className="archive-footer-note"><span>✦</span><p>New cases are researched from primary sources and reviewed before they enter the archive. <button>Send a story lead →</button></p></div></main>
+  const categories = ['All cases', ...Array.from(new Set(catalog.map((puzzle) => puzzle.category)))]
+  const visible = filter === 'All cases' ? catalog : catalog.filter((puzzle) => puzzle.category === filter)
+  return <main className="page shell-width page-spacer"><div className="archive-intro"><div><span className="micro-label">THE CASE ARCHIVE</span><h1>Find the next<br /><em>hidden link.</em></h1><p>Real events, carefully connected. Search by subject, then let the evidence change your mind.</p></div><div className="archive-count"><strong>{String(catalog.length).padStart(2, '0')}</strong><span>case files</span></div></div><div className="filter-tabs" aria-label="Filter archive">{categories.map((category) => <button key={category} className={filter === category ? 'selected' : ''} onClick={() => setFilter(category)}>{category}</button>)}</div><div className="archive-case-grid">{visible.map((puzzle) => <CaseCard key={puzzle.id} puzzle={puzzle} onPlay={onPlay} completed={Boolean(history[puzzle.id]?.completed)} />)}</div><div className="archive-footer-note"><span>✦</span><p>New cases are researched from source material and pass automated checks before publication. <button>Send a story lead →</button></p></div></main>
 }
 
 function HowScreen({ onNavigate }: { onNavigate: (screen: Screen) => void }) {
@@ -156,6 +161,9 @@ function EditorScreen() {
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
+  const [catalog, setCatalog] = useState<Puzzle[]>(puzzles)
+  const [daily, setDaily] = useState<Puzzle>(dailyPuzzle)
+  const [remotePuzzleIds, setRemotePuzzleIds] = useState<Set<string>>(() => new Set())
   const [selectedPuzzle, setSelectedPuzzle] = useState<Puzzle>(dailyPuzzle)
   const [stage, setStage] = useState<GameStage>('intro')
   const [feedback, setFeedback] = useState<Feedback | null>(null)
@@ -163,16 +171,43 @@ export default function App() {
   const [history, setHistory] = useState<Record<string, Attempt>>(() => readJson<Record<string, Attempt>>(HISTORY_KEY, {}))
   const [loadedUrl, setLoadedUrl] = useState(false)
 
-  useEffect(() => { const sharedId = new URLSearchParams(window.location.search).get('ripple'); if (sharedId && !loadedUrl) { const puzzle = getPuzzleById(sharedId); setSelectedPuzzle(puzzle); setAttempt(makeAttempt(puzzle)); setStage('intro'); setScreen('game'); setLoadedUrl(true) } }, [loadedUrl])
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    let cancelled = false
+    void Promise.all([rippleApi.getDaily(), rippleApi.getPuzzles()]).then(([dailyPayload, listPayload]) => {
+      if (cancelled) return
+      const cloud = (listPayload ?? []).map((puzzle, index) => fromCloud(puzzle, 1000 + index))
+      const cloudDaily = dailyPayload ? fromCloud(dailyPayload, cloud.find((puzzle) => puzzle.id === dailyPayload.id)?.number ?? 1000) : null
+      if (cloudDaily && !cloud.some((puzzle) => puzzle.id === cloudDaily.id)) cloud.unshift(cloudDaily)
+      if (cloud.length) {
+        setCatalog([...cloud, ...puzzles.filter((local) => !cloud.some((remote) => remote.id === local.id))])
+        setRemotePuzzleIds(new Set(cloud.map((puzzle) => puzzle.id)))
+      }
+      if (cloudDaily) setDaily(cloudDaily)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+useEffect(() => { const sharedId = new URLSearchParams(window.location.search).get('ripple'); if (sharedId && !loadedUrl) { const puzzle = catalog.find((item) => item.id === sharedId); if (puzzle) { setLoadedUrl(true); void startPuzzle(puzzle) } } }, [catalog, loadedUrl])
   useEffect(() => { if (attempt && !attempt.completed && screen === 'game') window.localStorage.setItem(ACTIVE_KEY, JSON.stringify(attempt)) }, [attempt, screen])
 
-  const startPuzzle = (puzzle: Puzzle) => { setSelectedPuzzle(puzzle); setFeedback(null); if (history[puzzle.id]?.completed) { setAttempt(history[puzzle.id]); setScreen('results'); return } const saved = readJson<Attempt | null>(ACTIVE_KEY, null); const next = saved?.puzzleId === puzzle.id && !saved.completed ? saved : makeAttempt(puzzle); setAttempt(next); setStage(next.chain.length > 1 ? 'playing' : 'intro'); setScreen('game') }
+const startPuzzle = async (puzzle: Puzzle) => { setSelectedPuzzle(puzzle); setFeedback(null); if (history[puzzle.id]?.completed) { setAttempt(history[puzzle.id]); setScreen('results'); return } const saved = readJson<Attempt | null>(ACTIVE_KEY, null); let next = saved?.puzzleId === puzzle.id && !saved.completed ? saved : makeAttempt(puzzle); if ((!saved || saved.puzzleId !== puzzle.id || saved.completed) && remotePuzzleIds.has(puzzle.id)) { const server = await rippleApi.createAttempt(puzzle.id); if (!server) { window.alert('Could not connect to RIPPLE. Please try again.'); return } next = { ...next, ...server, puzzleId: puzzle.id, chain: [puzzle.start.id], wrongChoices: [], hintSteps: [], startedAt: typeof server.startedAt === 'number' ? server.startedAt : Date.now() } } setAttempt(next); setStage(next.chain.length > 1 ? 'playing' : 'intro'); setScreen('game') }
   const updateAttempt = (updater: (current: Attempt) => Attempt) => setAttempt((current) => current ? updater(current) : current)
-  const handleChoice = (choice: Choice, step: Step) => { if (feedback?.correct || !attempt) return; if (choice.correct) { const triedWrong = attempt.wrongChoices.some((id) => step.choices.some((item) => item.id === id)); updateAttempt((current) => ({ ...current, chain: [...current.chain, choice.id], firstTry: triedWrong ? current.firstTry : current.firstTry + 1 })); setFeedback({ choiceId: choice.id, correct: true, text: step.bridge }) } else { updateAttempt((current) => ({ ...current, mistakes: current.mistakes + 1, wrongChoices: [...current.wrongChoices, choice.id] })); setFeedback({ choiceId: choice.id, correct: false, text: choice.whyWrong ?? 'The evidence points to another branch.' }) } }
+const handleChoice = async (choice: Choice, step: Step) => { if (feedback?.correct || !attempt) return; if (attempt.id && choice.answerId) { const result = await rippleApi.submitAnswer(attempt.id, step.id, choice.answerId); if (!result) { setFeedback({ choiceId: choice.id, correct: false, text: 'Your answer was not submitted. Check your connection and try again.' }); return } if (result.correct) { const triedWrong = attempt.wrongChoices.some((id) => step.choices.some((item) => item.id === id)); updateAttempt((current) => ({ ...current, chain: [...current.chain, choice.id], firstTry: triedWrong ? current.firstTry : current.firstTry + 1 })); setFeedback({ choiceId: choice.id, correct: true, text: result.bridge ?? step.bridge }) } else { updateAttempt((current) => ({ ...current, mistakes: current.mistakes + 1, wrongChoices: [...current.wrongChoices, choice.id] })); setFeedback({ choiceId: choice.id, correct: false, text: result.explanation || 'The evidence points to another branch.' }) } return } if (choice.correct) { const triedWrong = attempt.wrongChoices.some((id) => step.choices.some((item) => item.id === id)); updateAttempt((current) => ({ ...current, chain: [...current.chain, choice.id], firstTry: triedWrong ? current.firstTry : current.firstTry + 1 })); setFeedback({ choiceId: choice.id, correct: true, text: step.bridge }) } else { updateAttempt((current) => ({ ...current, mistakes: current.mistakes + 1, wrongChoices: [...current.wrongChoices, choice.id] })); setFeedback({ choiceId: choice.id, correct: false, text: choice.whyWrong ?? 'The evidence points to another branch.' }) } }
   const handleContinue = () => { if (!attempt || !feedback?.correct) return; if (attempt.stepIndex >= selectedPuzzle.steps.length - 1) { const completed = { ...attempt, completed: true }; setAttempt(completed); setHistory((current) => { const next = { ...current, [selectedPuzzle.id]: completed }; window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); return next }); window.localStorage.removeItem(ACTIVE_KEY); setFeedback(null); setScreen('results') } else { updateAttempt((current) => ({ ...current, stepIndex: current.stepIndex + 1 })); setFeedback(null) } }
-  const handleHint = (step: Step) => { if (!attempt || attempt.hintSteps.includes(step.id)) return; updateAttempt((current) => ({ ...current, hints: current.hints + 1, hintSteps: [...current.hintSteps, step.id] })) }
+const handleHint = async (step: Step) => { if (!attempt || attempt.hintSteps.includes(step.id)) return; if (attempt.id) await rippleApi.requestHint(attempt.id); updateAttempt((current) => ({ ...current, hints: current.hints + 1, hintSteps: [...current.hintSteps, step.id] })) }
   const navigate = (next: Screen) => { setScreen(next); if (next !== 'game') setFeedback(null) }
   const activeResult = useMemo(() => attempt?.completed ? attempt : history[selectedPuzzle.id], [attempt, history, selectedPuzzle.id])
 
-  return <div className={`app ${screen === 'game' ? 'is-game-screen' : ''}`}><div className="paper-grain" aria-hidden="true" />{screen !== 'game' && <Header screen={screen} onNavigate={navigate} />}{screen === 'home' && <HomeScreen puzzle={dailyPuzzle} dailyDone={Boolean(history[dailyPuzzle.id]?.completed)} activeAttempt={attempt && !attempt.completed && attempt.puzzleId === dailyPuzzle.id ? attempt : null} onPlay={startPuzzle} onResume={() => startPuzzle(dailyPuzzle)} onNavigate={navigate} />}{screen === 'archive' && <ArchiveScreen history={history} onPlay={startPuzzle} />}{screen === 'how' && <HowScreen onNavigate={navigate} />}{screen === 'game' && attempt && <GameScreen puzzle={selectedPuzzle} attempt={attempt} stage={stage} feedback={feedback} onStageChange={setStage} onChoice={handleChoice} onHint={handleHint} onContinue={handleContinue} onExit={() => navigate('home')} />}{screen === 'results' && activeResult && <ResultsScreen puzzle={selectedPuzzle} attempt={activeResult} onPlay={startPuzzle} onNavigate={navigate} />}{screen === 'editor' && <EditorScreen />}{screen !== 'game' && <footer className="footer"><div className="shell-width"><span><b>RIPPLE</b> / A source-first learning game</span><span><button onClick={() => navigate('editor')}>Editor desk</button><button onClick={() => navigate('how')}>Methodology</button><button>Privacy</button></span></div></footer>}</div>
+  return <div className={'app ' + (screen === 'game' ? 'is-game-screen' : '')}>
+    <div className="paper-grain" aria-hidden="true" />
+    {screen !== 'game' && <Header screen={screen} onNavigate={navigate} caseCount={catalog.length} />}
+    {screen === 'home' && <HomeScreen puzzle={daily} dailyDone={Boolean(history[daily.id]?.completed)} activeAttempt={attempt && !attempt.completed && attempt.puzzleId === daily.id ? attempt : null} onPlay={startPuzzle} onResume={() => startPuzzle(daily)} onNavigate={navigate} />}
+    {screen === 'archive' && <ArchiveScreen history={history} onPlay={startPuzzle} catalog={catalog} />}
+    {screen === 'how' && <HowScreen onNavigate={navigate} />}
+    {screen === 'game' && attempt && <GameScreen puzzle={selectedPuzzle} attempt={attempt} stage={stage} feedback={feedback} onStageChange={setStage} onChoice={handleChoice} onHint={handleHint} onContinue={handleContinue} onExit={() => navigate('home')} />}
+    {screen === 'results' && activeResult && <ResultsScreen puzzle={selectedPuzzle} attempt={activeResult} onPlay={startPuzzle} onNavigate={navigate} />}
+    {screen === 'editor' && <EditorScreen />}
+    {screen !== 'game' && <footer className="footer"><div className="shell-width"><span><b>RIPPLE</b> / A source-first learning game</span><span><button onClick={() => navigate('editor')}>Editor desk</button><button onClick={() => navigate('how')}>Methodology</button><button>Privacy</button></span></div></footer>}
+  </div>
 }

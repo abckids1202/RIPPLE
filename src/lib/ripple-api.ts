@@ -3,7 +3,7 @@ import type { Choice, Puzzle, Source, Step } from '../data/puzzles'
 import { isSupabaseConfigured, supabaseFunction } from './supabase'
 
 /** Public payloads intentionally omit answer keys until an answer is posted. */
-export type SafeChoice = Omit<Choice, 'correct' | 'whyWrong'>
+export type SafeChoice = Omit<Choice, 'correct' | 'whyWrong'> & { answerId: string }
 export type SafeStep = Omit<Step, 'choices'> & { choices: SafeChoice[]; source: Source }
 export type SafePuzzlePayload = Omit<Puzzle, 'steps'> & { steps: SafeStep[]; revealedStep?: number }
 
